@@ -1,0 +1,464 @@
+#include &lt;Servo.h&gt;<br>
+#include &lt;NewPing.h&gt<br>
+
+#define TRIGGER_PINL  7  // Arduino pin tied to trigger pin on ping sensor.<br>
+#define ECHO_PINL     8  // Arduino pin tied to echo pin on ping sensor.<br>
+<br>
+#define MAX_DISTANCE 100 // Maximum distance we want to ping for (in centimeters). Maximum sensor distance is rated at 400-500cm.<br>
+<br>
+#define TRIGGER_PINF  5  // Arduino pin tied to trigger pin on ping sensor.<br>
+#define ECHO_PINF     6  // Arduino pin tied to echo pin on ping sensor.<br>
+<br>
+#define TRIGGER_PINR  9  // Arduino pin tied to trigger pin on ping sensor.<br>
+#define ECHO_PINR     10  // Arduino pin tied to echo pin on ping sensor.<br>
+<br>
+int dir;<br>
+<br>
+<br>
+#define STOP 0<br>
+#define FORWARD 1<br>
+#define BACKWARD 2<br>
+#define LEFT 3<br>
+#define RIGHT 4<br>
+<br>
+<br>
+<br>
+float P = 0.7 ;<br>
+float D = 0.5 ;<br>
+float I = 0.4 ;<br>
+float oldErrorP ;<br>
+float totalError ;<br>
+int offset = 5 ;<br>
+<br>
+int wall_threshold = 13 ;<br>
+//int left_threshold = 10 ;<br>
+//int right_threshold = 10 ;<br>
+int front_threshold = 7 ;<br>
+<br>
+boolean frontwall ;<br>
+boolean leftwall ;<br>
+boolean rightwall ;<br>
+boolean first_turn ;<br>
+boolean rightWallFollow ;<br>
+boolean leftWallFollow ;<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+int en1 = 2 ;<br>
+int en2 = 3 ;<br>
+<br>
+int en3 = 4 ;<br>
+int en4 = 5 ;<br>
+<br>
+int enA = 10 ;<br>
+int enB = 11 ;<br>
+<br>
+int baseSpeed = 70 ;<br>
+<br>
+int RMS ;<br>
+int LMS ;<br>
+<br>
+int LED = 13 ;<br>
+int led1 = 8 ;<br>
+int led2 = 9 ;<br>
+<br>
+int s_R=5;<br>
+int s_L=6;<br>
+<br>
+NewPing sonarLeft(TRIGGER_PINL, ECHO_PINL, MAX_DISTANCE); // NewPing setup of pins and maximum distance.<br>
+NewPing sonarRight(TRIGGER_PINR, ECHO_PINR, MAX_DISTANCE);<br>
+NewPing sonarFront(TRIGGER_PINF, ECHO_PINF, MAX_DISTANCE);<br>
+<br>
+unsigned int pingSpeed = 30; // How frequently are we going to send out a ping (in milliseconds). 50ms would be 20 times a second.<br>
+unsigned long pingTimer;     // Holds the next ping time.<br>
+<br>
+Servo servoR;<br>
+Servo servoL;<br>
+
+float oldLeftSensor, oldRightSensor, leftSensor, rightSensor, frontSensor, oldFrontSensor, lSensor, rSensor, fSensor;<br>
+<br>
+//int TestNUM = 1  ;<br>
+
+
+<br>
+void setup() {<br>
+
+  Serial.begin(115200); // Open serial monitor at 115200 baud to see ping results.<br>
+<br>
+  servoR.attach(s_R);<br>
+  servoL.attach(s_L);<br>
+  //for (int i = 2; i &lt;= 13; i++) //For Motor Shield<br>
+    //pinMode(i, OUTPUT);<br>
+<br>
+
+
+  first_turn = false ;<br>
+  rightWallFollow = false ;<br>
+  leftWallFollow = false ;<br>
+<br>
+
+}<br>
+
+void loop() {<br>
+
+<br>
+  //========================================START========================================//<br>
+
+<br>
+  ReadSensors();<br>
+
+  walls();<br>
+
+
+  if ( first_turn == false ) {<br>
+
+    pid_start();<br>
+
+  }<br>
+  else if (leftWallFollow == true ) {<br>
+
+    PID(true) ;<br>
+
+  }<br>
+  else if (rightWallFollow == true ) {<br>
+    PID(false) ;<br>
+  }<br>
+
+
+  if (leftwall == true && rightwall == false && frontwall == true ) {<br>
+
+    // turnright();<br>
+    PID(false) ;<br>
+
+    if ( first_turn == false ) {<br>
+
+      //      right_threshold = right_threshold - offset ;<br>
+      //      left_threshold = left_threshold + offset ;<br>
+
+
+      first_turn = true ;<br>
+      rightWallFollow = true ;<br>
+
+      digitalWrite(led2 , LOW );<br>
+      digitalWrite(led1 ,HIGH );<br>
+    }<br>
+  }<br>
+   if (leftwall == false && rightwall == true && frontwall == true ) {<br>
+
+    //  turnleft();<br>
+    PID(true) ;<br>
+
+    if ( first_turn == false ) {<br>
+
+      //      left_threshold = left_threshold - offset ;<br>
+      //      right_threshold = right_threshold + offset ;<br>
+
+      first_turn = true ;<br>
+      leftWallFollow = true ;<br>
+      digitalWrite(LED , HIGH);<br>
+
+    }<br>
+  }<br>
+   if ( leftSensor == 0 || leftSensor &gt; 100 && rightSensor == 0 || rightSensor &gt; 100 && frontSensor == 0 || frontSensor > 100 ) {<br>
+
+    setDirection(STOP);<br>
+  }<br>
+
+
+
+  // read sensors & print the result to the serial monitor //<br>
+
+
+  Serial.print(" Left : ");<br>
+  Serial.print(leftSensor);<br>
+  Serial.print(" cm ");<br>
+  Serial.print(" Right : ");<br>
+  Serial.print(rightSensor);<br>
+  Serial.print(" cm ");<br>
+  Serial.print(" Front : ");<br>
+  Serial.print(frontSensor);<br>
+  Serial.println(" cm ");<br>
+<br>
+  //measure error & print the result to the serial monitor<br>
+
+
+  Serial.print("error=");<br>
+  Serial.println(totalError);<br>
+
+
+}<br>
+
+
+
+
+
+
+
+
+//--------------------------------- direction control ---------------------------------//<br>
+
+void setDirection(int dir) {<br>
+
+  if ( dir == FORWARD ) {<br>
+    servoR.write(180);<br>
+    servoL.write(0);<br>
+  }<br>
+  else if ( dir == LEFT ) {<br>
+    servoR.write(180);<br>
+    servoL.write(135);<br>
+  }<br>
+  else if ( dir == RIGHT ) {<br>
+    servoR.write(45);<br>
+    servoL.write(0);<br>
+  }<br>
+  else if ( dir == STOP ) {<br>
+    servoR.write(90);<br>
+    servoL.write(90);<br>
+  }<br>
+  else if ( dir == BACKWARD ) {<br>
+    servoR.write(0);<br>
+    servoL.write(180);<br>
+  }<br>
+}<br>
+//---------------------------------------------------------------------------//<br>
+
+
+//--------------------------------- Sensors ---------------------------------//<br>
+
+void ReadSensors() {<br>
+
+  //leftSensor = sonarLeft.ping_median(TestNUM);     //accurate but slow<br>
+  //rightSensor = sonarRight.ping_median(TestNUM);     //accurate but slow<br>
+  //frontSensor = sonarFront.ping_median(TestNUM);     //accurate but slow<br>
+<br>
+  //leftSensor = sonarLeft.convert_cm(leftSensor);<br>
+  //rightSensor = sonarRight.convert_cm(rightSensor);<br>
+  //frontSensor = sonarFront.convert_cm(frontSensor);<br>
+<br>
+  lSensor = sonarLeft.ping_cm(); //ping in cm<br>
+  rSensor = sonarRight.ping_cm();<br>
+  fSensor = sonarFront.ping_cm();<br>
+<br>
+<br>
+  leftSensor = (lSensor + oldLeftSensor) / 2; //average distance between old & new readings to make the change smoother<br>
+  rightSensor = (rSensor + oldRightSensor) / 2;<br>
+  frontSensor = (fSensor + oldFrontSensor) / 2;<br>
+<br>
+<br>
+  oldLeftSensor = leftSensor; // save old readings for movment<br>
+  oldRightSensor = rightSensor;<br>
+  oldFrontSensor = frontSensor;<br>
+<br>
+}<br>
+
+//---------------------------------------------------------------------------//<br>
+
+<br>
+//--------------------------------- control ---------------------------------//<br>
+<br>
+void pid_start() {<br>
+<br>
+  //ReadSensors()<br>
+<br>
+  float errorP = leftSensor - rightSensor ;<br>
+  float errorD = errorP - oldErrorP;<br>
+  float errorI = (2.0 / 3.0) * errorI + errorP ;<br>
+<br>
+  totalError = P * errorP + D * errorD + I * errorI ;<br>
+<br>
+  oldErrorP = errorP ;<br>
+
+<br>
+  RMS = baseSpeed + totalError ;<br>
+  LMS = baseSpeed - totalError ;<br>
+<br>
+  //  if(RMS &lt; -255) RMS = -255; if(RMS &gt; 255)RMS = 255 ;<br>
+  //  if(LMS &lt; -255) LMS = -255;  if(LMS &gt; 255)LMS = 255 ;<br>
+<br>
+
+  if (RMS &lt; 0) {<br>
+
+    RMS = map(RMS , 0 , -255, 0, 255);<br>
+<br>
+    analogWrite(enA , RMS);<br>
+    analogWrite(enB , LMS);<br>
+
+    setDirection(RIGHT);<br>
+<br>
+  }<br>
+  else if (LMS &lt; 0) {<br>
+    LMS = map(LMS , 0 , -255, 0, 255);<br>
+<br>
+
+    analogWrite(enA , RMS);<br>
+    analogWrite(enB , LMS);<br>
+
+    setDirection(LEFT);<br>
+  }<br>
+  else {<br>
+
+    analogWrite(enA , RMS);<br>
+    analogWrite(enB , LMS);<br>
+<br>
+    setDirection(FORWARD);<br>
+  }<br>
+
+
+<br>
+}<br>
+<br>
+
+//----------------------------- wall follow  control -------------------------------//<br>
+
+void PID( boolean left ) {<br>
+
+  if (left == true ) {<br>
+
+    float errorP = leftSensor - rightSensor - offset ;<br>
+    float errorD = errorP - oldErrorP;<br>
+    float errorI = (2.0 / 3) * errorI + errorP ;<br>
+
+<br>
+    totalError = P * errorP + D * errorD + I * errorI ;<br>
+<br>
+    oldErrorP = errorP ;<br>
+<br>
+
+    RMS = baseSpeed + totalError ;<br>
+    LMS = baseSpeed - totalError ;<br>
+
+    //  if(RMS &lt; -255) RMS = -255; if(RMS &gt; 255)RMS = 255 ;<br>
+    //  if(LMS &lt; -255) LMS = -255;  if(LMS &gt; 255)LMS = 255 ;<br>
+
+<br>
+    if (RMS &lt; 0) {<br>
+
+      RMS = map(RMS , 0 , -255, 0, 255);<br>
+<br>
+      analogWrite(enA , RMS);<br>
+      analogWrite(enB , LMS);<br>
+<br>
+      setDirection(RIGHT);<br>
+
+    }
+    else if (LMS &lt; 0) {<br>
+      LMS = map(LMS , 0 , -255, 0, 255);<br>
+
+
+      analogWrite(enA , RMS);<br>
+      analogWrite(enB , LMS);<br>
+<br>
+      setDirection(LEFT);<br>
+    }<br>
+    else {<br>
+
+      analogWrite(enA , RMS);<br>
+      analogWrite(enB , LMS);<br>
+
+      setDirection(FORWARD);<br>
+    }<br>
+
+  }<br>
+  else {<br>
+
+    float errorP = leftSensor - rightSensor + offset ;<br>
+    float errorD = errorP - oldErrorP;<br>
+    float errorI = (2.0 / 3) * errorI + errorP ;<br>
+<br>
+    totalError = P * errorP + D * errorD + I * errorI ;<br>
+<br>
+    oldErrorP = errorP ;<br>
+<br>
+
+    RMS = baseSpeed + totalError ;<br>
+    LMS = baseSpeed - totalError ;<br>
+<br>
+    //  if(RMS &lt; -255) RMS = -255; if(RMS &gt; 255)RMS = 255 ;<br>
+    //  if(LMS &lt; -255) LMS = -255;  if(LMS &gt; 255)LMS = 255 ;<br>
+<br>
+    if (RMS &lt; 0) {<br>
+<br>
+      RMS = map(RMS , 0 , -255, 0, 255);<br>
+<br>
+      analogWrite(enA , RMS);<br>
+      analogWrite(enB , LMS);<br>
+<br>
+      setDirection(RIGHT);<br>
+<br>
+    }<br>
+    else if (LMS &lt; 0) {<br>
+      LMS = map(LMS , 0 , -255, 0, 255);<br>
+<br>
+
+      analogWrite(enA , RMS);<br>
+      analogWrite(enB , LMS);<br>
+<br>
+      setDirection(LEFT);<br>
+    }<br>
+    else {<br>
+<br>
+      analogWrite(enA , RMS);<br>
+      analogWrite(enB , LMS);<br>
+<br>
+      setDirection(FORWARD);<br>
+    }<br>
+
+  }<br>
+<br>
+}<br>
+
+//--------------------------- wall detection --------------------------------//<br>
+<br>
+void walls() {<br>
+
+
+  if ( leftSensor &lt; wall_threshold ) {<br>
+    leftwall = true ;<br>
+  }<br>
+  else {<br>
+    leftwall = false ;<br>
+  }<br>
+
+
+  if ( rightSensor &lt; wall_threshold ) {<br>
+    rightwall = true ;<br>
+  }<br>
+  else {<br>
+    rightwall = false ;<br>
+
+
+  } if ( frontSensor &lt; front_threshold ) {<br>
+    frontwall = true ;<br>
+  }<br>
+  else {<br>
+    frontwall = false ;<br>
+  }<br>
+
+}<br>
+
+
+
+//---------------------------------------------------------------------------//<br>
+
+void turnright() {<br>
+
+
+  LMS = baseSpeed ;<br>
+
+  RMS = LMS * rightSensor / ( rightSensor + 11 ) ;<br>
+
+
+}<br>
+
+//---------------------------------------------------------------------------//<br>
+
+void turnleft() {<br>
+
+
+  RMS = baseSpeed ;<br>
+
+  LMS = RMS * leftSensor / ( leftSensor + 11 ) ;<br>
+
+}<br>
